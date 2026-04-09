@@ -1,0 +1,872 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width,initial-scale=1"/>
+<title>VoiceAI — Control Panel</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"/>
+<link href="https://fonts.googleapis.com/css2?family=Space+Mono:wght@400;700&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet"/>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+
+:root{
+  --bg:       #0a0a0b;
+  --surface:  #111114;
+  --card:     #16161a;
+  --border:   #252530;
+  --border2:  #32323f;
+  --accent:   #6c63ff;
+  --accent2:  #a78bfa;
+  --green:    #22d3a5;
+  --amber:    #f59e0b;
+  --red:      #ef4444;
+  --text:     #e8e8f0;
+  --muted:    #6b6b80;
+  --mono:     'Space Mono', monospace;
+  --sans:     'DM Sans', sans-serif;
+}
+
+body{
+  background:var(--bg);
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:14px;
+  line-height:1.6;
+  min-height:100vh;
+}
+
+/* ── GRID LAYOUT ── */
+.shell{
+  display:grid;
+  grid-template-columns:220px 1fr;
+  grid-template-rows:56px 1fr;
+  min-height:100vh;
+}
+
+/* ── TOPBAR ── */
+.topbar{
+  grid-column:1/-1;
+  display:flex;
+  align-items:center;
+  padding:0 24px;
+  border-bottom:1px solid var(--border);
+  gap:16px;
+  background:var(--surface);
+}
+.logo{
+  font-family:var(--mono);
+  font-size:13px;
+  font-weight:700;
+  letter-spacing:.08em;
+  color:var(--accent2);
+}
+.logo span{color:var(--green)}
+.topbar-status{
+  margin-left:auto;
+  display:flex;
+  align-items:center;
+  gap:20px;
+}
+.status-pill{
+  display:flex;
+  align-items:center;
+  gap:6px;
+  font-family:var(--mono);
+  font-size:11px;
+  color:var(--muted);
+}
+.status-pill .dot{
+  width:7px;height:7px;border-radius:50%;
+  background:var(--border2);
+}
+.status-pill.ok .dot{background:var(--green);box-shadow:0 0 6px var(--green)}
+.status-pill.warn .dot{background:var(--amber);box-shadow:0 0 6px var(--amber)}
+
+/* ── SIDEBAR ── */
+.sidebar{
+  background:var(--surface);
+  border-right:1px solid var(--border);
+  padding:20px 0;
+}
+.nav-section{
+  padding:0 16px;
+  margin-bottom:24px;
+}
+.nav-label{
+  font-family:var(--mono);
+  font-size:10px;
+  letter-spacing:.12em;
+  color:var(--muted);
+  text-transform:uppercase;
+  margin-bottom:8px;
+  padding:0 4px;
+}
+.nav-item{
+  display:flex;
+  align-items:center;
+  gap:10px;
+  padding:8px 12px;
+  border-radius:6px;
+  cursor:pointer;
+  font-size:13px;
+  color:var(--muted);
+  transition:all .15s;
+  border:1px solid transparent;
+  margin-bottom:2px;
+}
+.nav-item:hover{color:var(--text);background:rgba(108,99,255,.08)}
+.nav-item.active{
+  color:var(--accent2);
+  background:rgba(108,99,255,.12);
+  border-color:rgba(108,99,255,.2);
+}
+.nav-icon{
+  width:16px;height:16px;
+  display:flex;align-items:center;justify-content:center;
+  font-size:14px;
+}
+
+/* ── MAIN ── */
+.main{padding:28px;overflow-y:auto}
+
+.panel{display:none}
+.panel.active{display:block}
+
+/* ── SECTION HEADING ── */
+.section-head{
+  display:flex;align-items:center;gap:12px;
+  margin-bottom:24px;
+}
+.section-title{
+  font-family:var(--mono);
+  font-size:16px;
+  font-weight:700;
+  color:var(--text);
+}
+.section-sub{
+  font-size:12px;
+  color:var(--muted);
+  margin-top:2px;
+}
+.badge{
+  font-family:var(--mono);
+  font-size:10px;
+  padding:2px 8px;
+  border-radius:3px;
+  background:rgba(108,99,255,.15);
+  color:var(--accent2);
+  border:1px solid rgba(108,99,255,.3);
+}
+
+/* ── CARDS ── */
+.card{
+  background:var(--card);
+  border:1px solid var(--border);
+  border-radius:10px;
+  padding:20px;
+  margin-bottom:16px;
+}
+.card-title{
+  font-family:var(--mono);
+  font-size:11px;
+  letter-spacing:.1em;
+  color:var(--muted);
+  text-transform:uppercase;
+  margin-bottom:16px;
+}
+
+/* ── UPLOAD ZONE ── */
+.upload-zone{
+  border:2px dashed var(--border2);
+  border-radius:10px;
+  padding:48px 24px;
+  text-align:center;
+  cursor:pointer;
+  transition:all .2s;
+  position:relative;
+  background:rgba(108,99,255,.02);
+}
+.upload-zone:hover,.upload-zone.drag{
+  border-color:var(--accent);
+  background:rgba(108,99,255,.06);
+}
+.upload-zone input[type=file]{
+  position:absolute;inset:0;opacity:0;cursor:pointer;
+}
+.upload-icon{
+  font-size:36px;
+  margin-bottom:12px;
+  display:block;
+}
+.upload-zone h3{
+  font-size:15px;font-weight:500;
+  color:var(--text);margin-bottom:6px;
+}
+.upload-zone p{font-size:12px;color:var(--muted)}
+
+.upload-meta{
+  display:flex;gap:12px;margin-top:16px;
+}
+.upload-meta input{
+  flex:1;
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:6px;
+  padding:8px 12px;
+  color:var(--text);
+  font-family:var(--sans);
+  font-size:13px;
+  outline:none;
+  transition:border-color .15s;
+}
+.upload-meta input:focus{border-color:var(--accent)}
+.upload-meta input::placeholder{color:var(--muted)}
+
+/* ── BUTTONS ── */
+.btn{
+  display:inline-flex;align-items:center;gap:8px;
+  padding:9px 18px;border-radius:6px;
+  font-family:var(--mono);font-size:12px;font-weight:700;
+  letter-spacing:.04em;cursor:pointer;border:none;
+  transition:all .15s;
+}
+.btn-primary{
+  background:var(--accent);color:#fff;
+}
+.btn-primary:hover{background:#7c74ff;transform:translateY(-1px)}
+.btn-primary:active{transform:translateY(0)}
+.btn-primary:disabled{opacity:.4;cursor:not-allowed;transform:none}
+.btn-ghost{
+  background:transparent;
+  color:var(--muted);
+  border:1px solid var(--border2);
+}
+.btn-ghost:hover{color:var(--text);border-color:var(--border)}
+.btn-danger{
+  background:rgba(239,68,68,.1);
+  color:var(--red);
+  border:1px solid rgba(239,68,68,.2);
+}
+.btn-danger:hover{background:rgba(239,68,68,.2)}
+
+/* ── PROGRESS / LOG ── */
+.progress-wrap{margin-top:16px;display:none}
+.progress-wrap.show{display:block}
+.progress-bar-track{
+  height:3px;border-radius:2px;
+  background:var(--border);
+  overflow:hidden;margin-bottom:12px;
+}
+.progress-bar-fill{
+  height:100%;border-radius:2px;
+  background:linear-gradient(90deg,var(--accent),var(--green));
+  width:0%;transition:width .3s;
+}
+.log{
+  font-family:var(--mono);font-size:11px;
+  color:var(--muted);line-height:1.8;
+  max-height:160px;overflow-y:auto;
+}
+.log .ok{color:var(--green)}
+.log .err{color:var(--red)}
+.log .info{color:var(--accent2)}
+
+/* ── KB DOCS TABLE ── */
+.kb-table{width:100%;border-collapse:collapse}
+.kb-table th{
+  font-family:var(--mono);font-size:10px;
+  letter-spacing:.1em;text-transform:uppercase;
+  color:var(--muted);padding:8px 12px;
+  text-align:left;border-bottom:1px solid var(--border);
+}
+.kb-table td{
+  padding:10px 12px;
+  border-bottom:1px solid rgba(37,37,48,.6);
+  font-size:13px;vertical-align:middle;
+}
+.kb-table tr:hover td{background:rgba(108,99,255,.04)}
+.kb-table .filename{
+  font-family:var(--mono);font-size:11px;color:var(--muted);
+}
+.chunk-badge{
+  font-family:var(--mono);font-size:10px;
+  padding:2px 7px;border-radius:3px;
+  background:rgba(34,211,165,.08);
+  color:var(--green);
+  border:1px solid rgba(34,211,165,.2);
+}
+
+/* ── CALL PANEL ── */
+.call-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+.phone-input-wrap{
+  display:flex;gap:8px;margin-bottom:16px;
+}
+.phone-input{
+  flex:1;
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:6px;padding:10px 14px;
+  color:var(--text);font-family:var(--mono);font-size:14px;
+  outline:none;transition:border-color .15s;
+}
+.phone-input:focus{border-color:var(--accent)}
+.call-status{
+  font-family:var(--mono);font-size:12px;
+  padding:12px 16px;border-radius:6px;
+  background:var(--surface);border:1px solid var(--border);
+  color:var(--muted);margin-bottom:12px;
+  min-height:44px;display:flex;align-items:center;gap:8px;
+}
+.call-status .live{color:var(--green)}
+
+/* ── MEMORY PANEL ── */
+.mem-search{
+  display:flex;gap:8px;margin-bottom:16px;
+}
+.mem-search input{
+  flex:1;
+  background:var(--surface);
+  border:1px solid var(--border2);
+  border-radius:6px;padding:9px 14px;
+  color:var(--text);font-size:13px;outline:none;
+  transition:border-color .15s;
+}
+.mem-search input:focus{border-color:var(--accent)}
+.memory-list{display:flex;flex-direction:column;gap:8px}
+.mem-item{
+  background:var(--surface);
+  border:1px solid var(--border);
+  border-radius:8px;padding:12px 16px;
+}
+.mem-item-text{font-size:13px;color:var(--text);margin-bottom:6px}
+.mem-item-meta{
+  display:flex;gap:8px;align-items:center;
+  font-family:var(--mono);font-size:10px;color:var(--muted);
+}
+.source-tag{
+  padding:2px 6px;border-radius:3px;font-size:10px;
+}
+.source-tag.kb{background:rgba(108,99,255,.1);color:var(--accent2);border:1px solid rgba(108,99,255,.2)}
+.source-tag.conv{background:rgba(34,211,165,.08);color:var(--green);border:1px solid rgba(34,211,165,.2)}
+
+.entity-chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:8px}
+.chip{
+  font-family:var(--mono);font-size:10px;
+  padding:3px 9px;border-radius:20px;
+  background:var(--surface);border:1px solid var(--border2);
+  color:var(--muted);
+}
+.chip.person{border-color:rgba(167,139,250,.3);color:var(--accent2)}
+.chip.topic{border-color:rgba(34,211,165,.3);color:var(--green)}
+.chip.place{border-color:rgba(245,158,11,.3);color:var(--amber)}
+
+/* ── STATS ROW ── */
+.stats-row{display:flex;gap:12px;margin-bottom:20px}
+.stat-card{
+  flex:1;background:var(--card);border:1px solid var(--border);
+  border-radius:8px;padding:14px 16px;
+}
+.stat-val{
+  font-family:var(--mono);font-size:22px;font-weight:700;
+  color:var(--text);margin-bottom:2px;
+}
+.stat-label{font-size:11px;color:var(--muted)}
+
+/* ── EMPTY STATE ── */
+.empty{
+  text-align:center;padding:40px;
+  color:var(--muted);font-size:13px;
+}
+.empty-icon{font-size:28px;margin-bottom:8px}
+
+/* ── SCROLLBAR ── */
+::-webkit-scrollbar{width:4px;height:4px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:var(--border2);border-radius:2px}
+
+/* ── DIVIDER ── */
+.divider{
+  border:none;border-top:1px solid var(--border);
+  margin:20px 0;
+}
+
+@keyframes spin{to{transform:rotate(360deg)}}
+.spinner{
+  display:inline-block;
+  width:12px;height:12px;border-radius:50%;
+  border:2px solid var(--border);
+  border-top-color:var(--accent);
+  animation:spin .7s linear infinite;
+}
+</style>
+</head>
+<body>
+
+<div class="shell">
+
+  <!-- TOPBAR -->
+  <header class="topbar">
+    <div class="logo">VOICE<span>AI</span> // CONTROL</div>
+    <div class="topbar-status">
+      <div class="status-pill" id="s-zendesk"><div class="dot"></div>ZENDESK</div>
+      <div class="status-pill" id="s-neo4j"><div class="dot"></div>NEO4J</div>
+      <div class="status-pill" id="s-ollama"><div class="dot"></div>OLLAMA</div>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <nav class="sidebar">
+    <div class="nav-section">
+      <div class="nav-label">Navigation</div>
+      <div class="nav-item active" onclick="showPanel('upload')">
+        <span class="nav-icon">⬆</span> PDF Upload
+      </div>
+      <div class="nav-item" onclick="showPanel('kb')">
+        <span class="nav-icon">📚</span> Knowledge Base
+      </div>
+      <div class="nav-item" onclick="showPanel('call')">
+        <span class="nav-icon">📞</span> Make Call
+      </div>
+      <div class="nav-item" onclick="showPanel('memory')">
+        <span class="nav-icon">🧠</span> Graph Memory
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main class="main">
+
+    <!-- ── UPLOAD PANEL ── -->
+    <div class="panel active" id="panel-upload">
+      <div class="section-head">
+        <div>
+          <div class="section-title">PDF → Knowledge Base</div>
+          <div class="section-sub">Upload company docs, policies, manuals — stored in Zendesk KB + Neo4j graph</div>
+        </div>
+        <span class="badge">ZENDESK + NEO4J</span>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Upload Document</div>
+
+        <div class="upload-zone" id="dropzone">
+          <input type="file" id="pdfFile" accept=".pdf"/>
+          <span class="upload-icon">📄</span>
+          <h3>Drop PDF here or click to browse</h3>
+          <p>Text-based PDFs only · Max 20 MB · Automatically chunked into KB articles</p>
+        </div>
+
+        <div class="upload-meta">
+          <input type="text" id="docTitle" placeholder="Article title (optional — defaults to filename)"/>
+          <button class="btn btn-primary" id="uploadBtn" onclick="uploadPDF()" disabled>
+            Upload & Publish
+          </button>
+        </div>
+
+        <div class="progress-wrap" id="progressWrap">
+          <div class="progress-bar-track">
+            <div class="progress-bar-fill" id="progressBar"></div>
+          </div>
+          <div class="log" id="uploadLog"></div>
+        </div>
+      </div>
+
+      <!-- Recent uploads quick view -->
+      <div class="card">
+        <div class="card-title">Recently Published Articles</div>
+        <div id="recentUploads">
+          <div class="empty"><div class="empty-icon">🗂</div>No uploads yet this session</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── KB PANEL ── -->
+    <div class="panel" id="panel-kb">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Knowledge Base Documents</div>
+          <div class="section-sub">All PDFs pushed to Zendesk KB and tracked in Neo4j</div>
+        </div>
+        <button class="btn btn-ghost" onclick="loadKBDocs()">↻ Refresh</button>
+      </div>
+
+      <div class="stats-row" id="kbStats">
+        <div class="stat-card"><div class="stat-val" id="kbTotal">—</div><div class="stat-label">Total Articles</div></div>
+        <div class="stat-card"><div class="stat-val" id="kbFiles">—</div><div class="stat-label">Source Files</div></div>
+        <div class="stat-card"><div class="stat-val" id="kbChunks">—</div><div class="stat-label">Avg Chunks/Doc</div></div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Article Index</div>
+        <div id="kbTableWrap">
+          <div class="empty"><div class="empty-icon">📚</div>Loading...</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── CALL PANEL ── -->
+    <div class="panel" id="panel-call">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Make a Call</div>
+          <div class="section-sub">Outbound call via Twilio · AI answers with KB + memory + web search</div>
+        </div>
+      </div>
+
+      <div class="call-grid">
+        <div class="card">
+          <div class="card-title">Dial</div>
+          <div class="phone-input-wrap">
+            <input class="phone-input" id="phoneNumber" type="tel"
+              placeholder="+91 98765 43210" value="+"/>
+            <button class="btn btn-primary" onclick="makeCall()">Call</button>
+          </div>
+          <div class="call-status" id="callStatus">
+            <span>Idle — enter a number and press Call</span>
+          </div>
+          <div style="margin-top:8px">
+            <button class="btn btn-danger" onclick="endCall()" id="endCallBtn" style="display:none">
+              End Call
+            </button>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="card-title">Active Context Sources</div>
+          <div style="display:flex;flex-direction:column;gap:10px;font-size:13px">
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>Zendesk KB</span>
+              <span class="chunk-badge">ACTIVE</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>Neo4j Graph Memory</span>
+              <span class="chunk-badge">ACTIVE</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>Tavily Web Search</span>
+              <span id="tavilyStatus" class="chunk-badge">CHECKING…</span>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center">
+              <span>Ollama LLM</span>
+              <span class="chunk-badge">LOCAL</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="card-title">Call Log</div>
+        <div class="log" id="callLog" style="max-height:240px">
+          <span class="info">Waiting for call activity…</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ── MEMORY PANEL ── -->
+    <div class="panel" id="panel-memory">
+      <div class="section-head">
+        <div>
+          <div class="section-title">Graph Memory Explorer</div>
+          <div class="section-sub">Caller memories, entities, and KB document links stored in Neo4j</div>
+        </div>
+      </div>
+
+      <div class="mem-search">
+        <input id="memPhone" type="tel" placeholder="Enter caller phone e.g. +919876543210"/>
+        <button class="btn btn-primary" onclick="loadMemory()">Load Memory</button>
+        <button class="btn btn-danger" onclick="clearMemory()" id="clearBtn" style="display:none">Clear</button>
+      </div>
+
+      <div id="memoryResult">
+        <div class="empty">
+          <div class="empty-icon">🔍</div>
+          Enter a phone number to explore caller memory
+        </div>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── NAVIGATION ──
+function showPanel(name) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+  document.getElementById('panel-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+  if (name === 'kb') loadKBDocs();
+}
+
+// ── STATUS PING ──
+async function pingStatuses() {
+  try {
+    const r = await fetch('/api/kb-documents');
+    setStatus('s-neo4j', r.ok);
+  } catch { setStatus('s-neo4j', false); }
+
+  try {
+    const r = await fetch('/api/search?q=test');
+    setStatus('s-zendesk', r.ok);
+  } catch { setStatus('s-zendesk', false); }
+
+  setStatus('s-ollama', true); // assume local
+  document.getElementById('tavilyStatus').textContent = 'GATED';
+}
+function setStatus(id, ok) {
+  const el = document.getElementById(id);
+  el.classList.toggle('ok', ok);
+  el.classList.toggle('warn', !ok);
+}
+pingStatuses();
+
+// ── DRAG & DROP ──
+const dropzone = document.getElementById('dropzone');
+const fileInput = document.getElementById('pdfFile');
+const uploadBtn = document.getElementById('uploadBtn');
+
+dropzone.addEventListener('dragover', e => { e.preventDefault(); dropzone.classList.add('drag'); });
+dropzone.addEventListener('dragleave', () => dropzone.classList.remove('drag'));
+dropzone.addEventListener('drop', e => {
+  e.preventDefault();
+  dropzone.classList.remove('drag');
+  const f = e.dataTransfer.files[0];
+  if (f && f.type === 'application/pdf') {
+    fileInput.files = e.dataTransfer.files;
+    onFileSelected(f);
+  }
+});
+fileInput.addEventListener('change', () => {
+  if (fileInput.files[0]) onFileSelected(fileInput.files[0]);
+});
+function onFileSelected(f) {
+  dropzone.querySelector('h3').textContent = f.name;
+  dropzone.querySelector('p').textContent = (f.size / 1024).toFixed(1) + ' KB — ready to upload';
+  uploadBtn.disabled = false;
+}
+
+// ── PDF UPLOAD ──
+const sessionArticles = [];
+
+async function uploadPDF() {
+  const file = fileInput.files[0];
+  if (!file) return;
+
+  const title = document.getElementById('docTitle').value.trim();
+  const form  = new FormData();
+  form.append('pdf', file);
+  if (title) form.append('title', title);
+
+  uploadBtn.disabled = true;
+  const pw = document.getElementById('progressWrap');
+  const pb = document.getElementById('progressBar');
+  const log = document.getElementById('uploadLog');
+  pw.classList.add('show');
+  log.innerHTML = '';
+  pb.style.width = '10%';
+
+  appendLog(log, 'info', '→ Reading PDF…');
+
+  const fakeProgress = setInterval(() => {
+    const cur = parseFloat(pb.style.width);
+    if (cur < 85) pb.style.width = (cur + 5) + '%';
+  }, 400);
+
+  try {
+    const res  = await fetch('/api/upload-pdf', { method: 'POST', body: form });
+    const data = await res.json();
+    clearInterval(fakeProgress);
+
+    if (!res.ok) throw new Error(data.error || 'Upload failed');
+
+    pb.style.width = '100%';
+    appendLog(log, 'ok',   `✓ ${data.pages} page(s) parsed`);
+    appendLog(log, 'ok',   `✓ Split into ${data.chunks} chunk(s)`);
+    data.articles.forEach(a => {
+      appendLog(log, 'ok', `✓ Published: "${a.title}" [ID: ${a.id}]`);
+      sessionArticles.push(a);
+    });
+    appendLog(log, 'ok', `✓ Graph links created in Neo4j`);
+
+    renderRecentUploads();
+    uploadBtn.disabled = false;
+
+  } catch (err) {
+    clearInterval(fakeProgress);
+    pb.style.width = '100%';
+    pb.style.background = 'var(--red)';
+    appendLog(log, 'err', '✗ ' + err.message);
+    uploadBtn.disabled = false;
+  }
+}
+
+function appendLog(el, cls, msg) {
+  el.innerHTML += `<div class="${cls}">${msg}</div>`;
+  el.scrollTop = el.scrollHeight;
+}
+
+function renderRecentUploads() {
+  const el = document.getElementById('recentUploads');
+  if (!sessionArticles.length) return;
+  el.innerHTML = `<table class="kb-table">
+    <thead><tr><th>Title</th><th>Article ID</th><th>Link</th></tr></thead>
+    <tbody>${sessionArticles.map(a => `
+      <tr>
+        <td>${a.title}</td>
+        <td class="filename">${a.id}</td>
+        <td><a href="${a.url}" target="_blank" style="color:var(--accent2);font-family:var(--mono);font-size:11px">↗ view</a></td>
+      </tr>`).join('')}
+    </tbody></table>`;
+}
+
+// ── KB DOCUMENTS ──
+async function loadKBDocs() {
+  const wrap = document.getElementById('kbTableWrap');
+  wrap.innerHTML = '<div class="empty"><span class="spinner"></span></div>';
+  try {
+    const data = await fetch('/api/kb-documents').then(r => r.json());
+    if (!data.length) {
+      wrap.innerHTML = '<div class="empty"><div class="empty-icon">📚</div>No documents yet. Upload a PDF to get started.</div>';
+      ['kbTotal','kbFiles','kbChunks'].forEach(id => document.getElementById(id).textContent = '0');
+      return;
+    }
+    const files = [...new Set(data.map(d => d.filename))];
+    const avgChunks = (data.reduce((s, d) => s + (d.totalChunks || 1), 0) / files.length).toFixed(1);
+    document.getElementById('kbTotal').textContent  = data.length;
+    document.getElementById('kbFiles').textContent  = files.length;
+    document.getElementById('kbChunks').textContent = avgChunks;
+
+    wrap.innerHTML = `<table class="kb-table">
+      <thead><tr><th>Title</th><th>Source File</th><th>Chunks</th><th>Article ID</th></tr></thead>
+      <tbody>${data.map(d => `
+        <tr>
+          <td>${d.title}</td>
+          <td class="filename">${d.filename || '—'}</td>
+          <td><span class="chunk-badge">${d.chunkIndex + 1}/${d.totalChunks}</span></td>
+          <td class="filename">${d.articleId}</td>
+        </tr>`).join('')}
+      </tbody></table>`;
+  } catch (err) {
+    wrap.innerHTML = `<div class="empty" style="color:var(--red)">Failed to load: ${err.message}</div>`;
+  }
+}
+
+// ── MAKE CALL ──
+let activeSid = null;
+async function makeCall() {
+  const num = document.getElementById('phoneNumber').value.trim();
+  if (!num || num.length < 8) return;
+  const status = document.getElementById('callStatus');
+  status.innerHTML = '<span class="spinner"></span> Initiating call…';
+  try {
+    const data = await fetch('/api/call', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phoneNumber: num }),
+    }).then(r => r.json());
+    if (data.error) throw new Error(data.error);
+    activeSid = data.sid;
+    status.innerHTML = `<span class="live">● LIVE</span> Call SID: ${data.sid}`;
+    document.getElementById('endCallBtn').style.display = 'inline-flex';
+    logCall('info', `📞 Call started → ${num} [${data.sid}]`);
+  } catch (err) {
+    status.innerHTML = `<span style="color:var(--red)">✗ ${err.message}</span>`;
+  }
+}
+
+function endCall() {
+  document.getElementById('callStatus').innerHTML = '<span>Call ended</span>';
+  document.getElementById('endCallBtn').style.display = 'none';
+  activeSid = null;
+  logCall('ok', '📵 Call terminated');
+}
+
+function logCall(cls, msg) {
+  const log = document.getElementById('callLog');
+  const ts  = new Date().toLocaleTimeString();
+  log.innerHTML += `<div class="${cls}">[${ts}] ${msg}</div>`;
+  log.scrollTop = log.scrollHeight;
+}
+
+// ── MEMORY EXPLORER ──
+async function loadMemory() {
+  const phone = document.getElementById('memPhone').value.trim();
+  if (!phone) return;
+  const el = document.getElementById('memoryResult');
+  el.innerHTML = '<div class="empty"><span class="spinner"></span> Loading…</div>';
+
+  try {
+    const data = await fetch(`/api/memory/${encodeURIComponent(phone)}`).then(r => r.json());
+    document.getElementById('clearBtn').style.display = 'inline-flex';
+
+    const { memories = [], entities = [], kbDocs = [] } = data;
+
+    if (!memories.length && !entities.length && !kbDocs.length) {
+      el.innerHTML = '<div class="empty"><div class="empty-icon">🔍</div>No memory found for this number</div>';
+      return;
+    }
+
+    let html = '';
+
+    // Stats
+    html += `<div class="stats-row">
+      <div class="stat-card"><div class="stat-val">${memories.length}</div><div class="stat-label">Memories</div></div>
+      <div class="stat-card"><div class="stat-val">${entities.length}</div><div class="stat-label">Entities</div></div>
+      <div class="stat-card"><div class="stat-val">${kbDocs.length}</div><div class="stat-label">KB Docs Used</div></div>
+    </div>`;
+
+    // Entities
+    if (entities.length) {
+      html += `<div class="card"><div class="card-title">Known Entities</div>
+        <div class="entity-chips">${entities.map(e => {
+          const cls = e.type?.toLowerCase() || 'topic';
+          return `<span class="chip ${cls}">${e.name} <span style="opacity:.5">${e.type}</span></span>`;
+        }).join('')}</div></div>`;
+    }
+
+    // KB Docs
+    if (kbDocs.length) {
+      html += `<div class="card"><div class="card-title">KB Articles Accessed</div>
+        <div class="memory-list">${kbDocs.map(d => `
+          <div class="mem-item">
+            <div class="mem-item-text">${d.title}</div>
+            <div class="mem-item-meta">
+              <span class="source-tag kb">ZENDESK KB</span>
+              <span>${d.filename || ''}</span>
+              ${d.count ? `<span>· used ${d.count}x</span>` : ''}
+              ${d.question ? `<span>· "${d.question}"</span>` : ''}
+            </div>
+          </div>`).join('')}
+        </div></div>`;
+    }
+
+    // Memories
+    if (memories.length) {
+      html += `<div class="card"><div class="card-title">Conversation Memories</div>
+        <div class="memory-list">${memories.map(m => `
+          <div class="mem-item">
+            <div class="mem-item-text">${m.text}</div>
+            <div class="mem-item-meta">
+              <span class="source-tag ${m.source === 'zendesk_kb' ? 'kb' : 'conv'}">${m.source === 'zendesk_kb' ? 'KB LOOKUP' : 'CONVERSATION'}</span>
+              ${m.callId ? `<span>${m.callId}</span>` : ''}
+            </div>
+          </div>`).join('')}
+        </div></div>`;
+    }
+
+    el.innerHTML = html;
+
+  } catch (err) {
+    el.innerHTML = `<div class="empty" style="color:var(--red)">✗ ${err.message}</div>`;
+  }
+}
+
+async function clearMemory() {
+  const phone = document.getElementById('memPhone').value.trim();
+  if (!phone || !confirm(`Clear all memory for ${phone}?`)) return;
+  await fetch(`/api/memory/${encodeURIComponent(phone)}`, { method: 'DELETE' });
+  loadMemory();
+}
+</script>
+</body>
+</html>
