@@ -1,31 +1,56 @@
-const express = require("express");
-const { initGraphSchema } = require("./db");
-const { createWsServer } = require("./websocket");
-const routes = require("./routes");
-const config = require("./config");
+require("dotenv").config();
+
+const express    = require("express");
+const http       = require("http");
+const config     = require("./src/config");
+const db         = require("./src/database/Neo4jClient");
+const Logger     = require("./src/utils/logger");
+
+const callRoutes      = require("./src/routes/CallRoutes");
+const knowledgeRoutes = require("./src/routes/KnowledgeRoutes");
+const memoryRoutes    = require("./src/routes/MemoryRoutes");
+
+const WebSocketServer = require("./src/websocket/WebSocketServer");
+
+const log = new Logger("Server");
 
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(express.static("public"));
-app.use("/api", routes);
 
-const wss = createWsServer();
+app.use("/api", callRoutes);
+app.use("/api", knowledgeRoutes);
+app.use("/api", memoryRoutes);
 
-const server = app.listen(config.port, async () => {
-  console.log(`🚀 Port    : ${config.port}`);
-  console.log(`🔗 Ngrok   : ${config.ngrokUrl}`);
-  console.log(`🤖 OpenAI  : ${config.openai.apiKey ? "✅ " + config.openai.model : "❌ missing"}`);
-  console.log(`🧠 Neo4j   : ${config.neo4j.uri || "❌ missing"}`);
-  console.log(`📚 Zendesk : ${config.zendesk.subdomain || "❌ not configured"}`);
-  await initGraphSchema();
-});
+const server   = http.createServer(app);
+const wsServer = new WebSocketServer();
 
 server.on("upgrade", (req, socket, head) => {
-  if (req.url?.split("?")[0] === "/media-stream")
-    wss.handleUpgrade(req, socket, head, (ws) => wss.emit("connection", ws, req));
-  else socket.destroy();
+  const path = req.url?.split("?")[0];
+  if (path === "/media-stream") {
+    wsServer.handleUpgrade(req, socket, head);
+  } else {
+    socket.destroy();
+  }
 });
 
-process.on("SIGTERM", () => server.close(() => process.exit(0)));
-process.on("SIGINT",  () => server.close(() => process.exit(0)));
+server.listen(config.port, async () => {
+  log.info(`Listening on port ${config.port}`);
+  log.info(`Ngrok URL  : ${config.ngrokUrl || "(not set)"}`);
+  log.info(`OpenAI     : ${config.openai.apiKey ? `✅ ${config.openai.model}` : "❌ missing"}`);
+  log.info(`Neo4j      : ${config.neo4j.uri    || "❌ missing"}`);
+  log.info(`Zendesk    : ${config.zendesk.subdomain || "not configured"}`);
+  await db.initSchema();
+});
+
+const shutdown = async (signal) => {
+  log.info(`${signal} received — shutting down`);
+  server.close(async () => {
+    await db.close();
+    process.exit(0);
+  });
+};
+
+process.on("SIGTERM", () => shutdown("SIGTERM"));
+process.on("SIGINT",  () => shutdown("SIGINT"));
