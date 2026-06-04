@@ -1,433 +1,308 @@
-# 🤖 Multi-Calling Agent with Knowledge Base & Orchestrator
+# 🤖 Multi-Calling Agent with Knowledge Base — Refactored Architecture
 
-> A production-grade **AI voice calling system** built on Node.js that combines real-time speech-to-text, LLM reasoning, text-to-speech, a live Zendesk knowledge base, and persistent cross-call graph memory — all orchestrated through a single server.
-
----
-
-## 📋 Table of Contents
-
-- [Overview](#overview)
-- [Architecture](#architecture)
-- [Tech Stack](#tech-stack)
-- [Features](#features)
-- [Prerequisites](#prerequisites)
-- [Environment Variables](#environment-variables)
-- [Installation](#installation)
-- [Running the Server](#running-the-server)
-- [API Reference](#api-reference)
-- [Call Flow](#call-flow)
-- [Knowledge Base Integration](#knowledge-base-integration)
-- [Graph Memory (Neo4j)](#graph-memory-neo4j)
-- [Deployment (AWS EC2)](#deployment-aws-ec2)
-- [Project Structure](#project-structure)
-- [Troubleshooting](#troubleshooting)
+> **Branch:** `refactor/class-based-architecture`
+> A production-grade, class-based refactor of the original flat-file server into a clean `src/` folder structure with proper encapsulation, singletons, and separation of concerns.
 
 ---
 
-## Overview
-
-This system enables intelligent, context-aware AI phone agents that can:
-
-- **Answer inbound/outbound calls** via Twilio with a realistic cloned voice
-- **Understand speech in real time** using Deepgram's `nova-2-phonecall` model
-- **Query a live knowledge base** (Zendesk) to answer product/support questions accurately
-- **Remember callers across sessions** using a Neo4j Aura graph database
-- **Generate dynamic responses** using an LLM (OpenAI-compatible endpoint / Ollama)
-- **Upload and query custom documents** (PDF parsing via `pdf-parse`) through a web UI
-
-The **orchestrator agent** layer routes each caller utterance to the right sub-capability: knowledge retrieval, memory lookup, LLM reasoning, or a combination of all three.
-
----
-
-## Architecture
+## 📁 Folder Structure
 
 ```
-Inbound/Outbound Call
-        │
-        ▼
-  ┌─────────────┐
-  │   Twilio    │  ◄── Media Stream (WebSocket, µlaw 8000 Hz)
-  └──────┬──────┘
-         │
-         ▼
-  ┌─────────────────────────────────────────────────────────────┐
-  │                      server.js (Express + WS)               │
-  │                                                             │
-  │  ┌──────────┐    ┌────────────────┐    ┌─────────────────┐ │
-  │  │ Deepgram │───►│  Orchestrator  │───►│   ElevenLabs    │ │
-  │  │  (STT)   │    │    Agent       │    │     (TTS)       │ │
-  │  └──────────┘    └───────┬────────┘    └─────────────────┘ │
-  │                          │                                  │
-  │            ┌─────────────┼─────────────┐                   │
-  │            ▼             ▼             ▼                   │
-  │     ┌────────────┐ ┌──────────┐ ┌──────────┐              │
-  │     │  Zendesk   │ │  OpenAI  │ │  Neo4j   │              │
-  │     │  KB (REST) │ │   LLM    │ │  Aura    │              │
-  │     └────────────┘ └──────────┘ └──────────┘              │
-  └─────────────────────────────────────────────────────────────┘
-         │
-         ▼
-  ┌─────────────────┐
-  │   Web UI        │  (public/ — PDF upload, call logs, agent config)
-  └─────────────────┘
+├── server.js                          # Lean bootstrap — mounts routes, starts HTTP + WS
+└── src/
+    ├── config/
+    │   └── index.js                   # AppConfig singleton (all env vars in one place)
+    ├── utils/
+    │   ├── logger.js                  # Logger class (prefix-based, swappable)
+    │   └── textCleaner.js             # TextCleaner (static helpers for TTS-safe text)
+    ├── database/
+    │   └── Neo4jClient.js             # Neo4jClient class (driver, cypher, schema init)
+    ├── memory/
+    │   └── MemoryService.js           # MemoryService class (save, recall, CRUD)
+    ├── knowledgebase/
+    │   ├── ZendeskService.js          # ZendeskService class (search, push, graph ops)
+    │   └── DocumentProcessor.js       # DocumentProcessor class (PDF → chunks → Zendesk)
+    ├── agents/
+    │   ├── OrchestratorAgent.js       # OrchestratorAgent class (fan-out → LLM → reply)
+    │   └── SearchAgent.js             # SearchAgent class (intent detection + Tavily + cache)
+    ├── tools/
+    │   ├── TTSService.js              # TTSService class (ElevenLabs → μ-law → Twilio)
+    │   └── TwilioClient.js            # TwilioClient class (makeCall, buildTwiML)
+    ├── websocket/
+    │   ├── CallSession.js             # CallSession class (per-call state machine)
+    │   └── WebSocketServer.js         # WebSocketServer class (upgrade handler)
+    └── routes/
+        ├── CallRoutes.js              # POST /call, /twilio-answer, /twilio-status
+        ├── KnowledgeRoutes.js         # /upload-pdf, /kb-documents, /graph, /search
+        └── MemoryRoutes.js            # GET/DELETE /memory/:phone
 ```
 
 ---
 
-## Tech Stack
+## 🏛️ Architecture Overview
 
-| Layer | Technology |
-|---|---|
-| **Runtime** | Node.js 18+ |
-| **Web Framework** | Express.js |
-| **Telephony** | Twilio (Voice, Media Streams) |
-| **Speech-to-Text** | Deepgram (`nova-2-phonecall`, streaming WebSocket) |
-| **Text-to-Speech** | ElevenLabs (cloned voice, `ulaw_8000` output) |
-| **LLM** | OpenAI API (or Ollama-compatible endpoint) |
-| **Knowledge Base** | Zendesk Help Center REST API |
-| **Graph Memory** | Neo4j Aura (nodes: `Caller`, `Entity`, `Memory`) |
-| **Document Parsing** | `pdf-parse` |
-| **File Uploads** | Multer |
-| **HTTP Client** | Axios |
-| **WebSocket** | `ws` |
-| **Config** | `dotenv` |
+```
+Twilio (phone call)
+      │
+      ▼
+WebSocketServer          ← handles WS upgrade from HTTP server
+      │
+      ▼
+CallSession              ← owns all per-call state (one instance per call)
+  ├── Deepgram WS        ← Speech-to-Text (STT)
+  ├── history[]          ← conversation history
+  └── gate{}             ← barge-in prevention
 
----
-
-## Features
-
-### 🎙️ Real-Time Voice Pipeline
-- Bidirectional WebSocket with Twilio Media Streams
-- Streaming STT via Deepgram with low-latency interim results
-- TTS audio streamed back as `ulaw_8000` chunks for telephone-quality playback
-
-### 🧠 Orchestrator Agent
-- Routes each user turn to the correct sub-agent:
-  - **KB Agent** — searches Zendesk articles for factual answers
-  - **Memory Agent** — retrieves caller history from Neo4j
-  - **LLM Agent** — generates contextual responses using conversation history
-- Assembles multi-source context into a single coherent reply
-
-### 📚 Knowledge Base (Zendesk)
-- Live REST API queries to Zendesk Help Center
-- Injects top-k relevant article snippets into the LLM prompt
-- Handles 403/rate-limit errors gracefully with fallback responses
-
-### 🗂️ Document Upload & RAG
-- Web UI for uploading PDF documents
-- `pdf-parse` extracts text and stores it for per-call retrieval
-- Augments LLM context with relevant document chunks
-
-### 🕸️ Cross-Call Graph Memory (Neo4j)
-- Caller identified by phone number → `Caller` node
-- Extracted entities (names, topics, preferences) stored as `Entity` nodes
-- `Memory` nodes capture key facts with timestamps and relationships
-- Persistent context survives across separate call sessions
-
-### 📞 Outbound Calling
-- Programmatic outbound calls via Twilio REST API
-- Configurable call scripts and agent personas
+      │  (transcript ready)
+      ▼
+OrchestratorAgent        ← pure logic, no I/O, fully testable
+  ├── MemoryService      ← recalls caller's past memories from Neo4j
+  ├── ZendeskService     ← fetches KB articles for product/policy questions
+  └── SearchAgent        ← Tavily live web search (only when needed)
+      │
+      ▼
+  OpenAI GPT-4o-mini     ← generates spoken reply
+      │
+      ▼
+TTSService               ← ElevenLabs → μ-law audio frames → Twilio WS
+```
 
 ---
 
-## Prerequisites
+## 🧱 Class Breakdown
 
-- Node.js `>= 18.x`
-- A [Twilio](https://twilio.com) account with a phone number and Media Streams enabled
-- A [Deepgram](https://deepgram.com) API key
-- An [ElevenLabs](https://elevenlabs.io) API key and a cloned voice ID
-- An OpenAI API key (or a locally running Ollama instance)
-- A [Neo4j Aura](https://neo4j.com/cloud/platform/aura-graph-database/) free/paid instance
-- A [Zendesk](https://zendesk.com) account with a Help Center (for KB features)
-- A publicly accessible server or tunnel (e.g. [ngrok](https://ngrok.com)) for Twilio webhooks
+### `src/config/index.js` — `AppConfig`
+Central singleton that reads all environment variables once at startup.
+```js
+const config = require('./src/config');
+config.openai.model      // "gpt-4o-mini"
+config.neo4j.uri         // NEO4J_URI
+config.elevenlabs.voiceId
+```
 
 ---
 
-## Environment Variables
+### `src/utils/logger.js` — `Logger`
+Prefix-based logger with private fields. Swap to `winston` later by editing just this file.
+```js
+const Logger = require('./src/utils/logger');
+const log = new Logger('MyModule');
+log.info('Server started');
+log.warn('Something off');
+log.error('Crashed:', err.message);
+log.debug('Only shown if DEBUG=true');
+```
 
-Create a `.env` file in the project root:
+---
+
+### `src/utils/textCleaner.js` — `TextCleaner`
+Static helpers to strip markdown and truncate text for TTS output.
+```js
+TextCleaner.forSpeech('**Hello** world')  // "Hello world"
+TextCleaner.truncate(longText, 550)       // cuts at word boundary + "… Want more detail?"
+```
+
+---
+
+### `src/database/Neo4jClient.js` — `Neo4jClient`
+Singleton Neo4j driver. Lazy-connects on first use.
+```js
+const db = require('./src/database/Neo4jClient');
+const records = await db.cypher('MATCH (c:Caller) RETURN c LIMIT 10');
+await db.initSchema();   // creates indexes on startup
+await db.close();        // called on SIGTERM
+```
+
+---
+
+### `src/memory/MemoryService.js` — `MemoryService`
+Saves and recalls per-caller memories and entities in Neo4j using OpenAI for extraction.
+```js
+await memoryService.upsertCaller('+911234567890');
+await memoryService.saveMemory(phone, callId, userText, assistantText);
+const ctx = await memoryService.recallMemory(phone);  // returns formatted string or null
+await memoryService.clearCallerMemories(phone);
+```
+
+---
+
+### `src/knowledgebase/ZendeskService.js` — `ZendeskService`
+Searches Zendesk Help Center and pushes new articles. Also links callers to KB docs in Neo4j.
+```js
+const { ctx, articleIds } = await zendeskService.fetchArticles('refund policy');
+const article = await zendeskService.pushArticle('Title', 'Body text');
+await zendeskService.saveKBMemory(phone, callId, question, articleIds);
+```
+
+---
+
+### `src/knowledgebase/DocumentProcessor.js` — `DocumentProcessor`
+Parses uploaded PDFs, splits into ~800-word chunks, pushes each chunk as a Zendesk article.
+```js
+const result = await documentProcessor.processUpload(buffer, 'manual.pdf', 'Product Manual');
+// { filename, chunks: 3, articles: [{ id, title, url }] }
+```
+
+---
+
+### `src/agents/SearchAgent.js` — `SearchAgent`
+Intent detection + Tavily web search with 5-minute in-memory cache. Only searches when needed.
+```js
+const ctx = await searchAgent.searchIfNeeded('latest AI news today');
+// Returns null for static questions like "what is gravity"
+// Returns live search results for time-sensitive queries
+```
+
+---
+
+### `src/agents/OrchestratorAgent.js` — `OrchestratorAgent`
+Fan-out orchestrator — runs memory recall, KB lookup, and web search in parallel, then calls OpenAI.
+```js
+const reply = await orchestrator.reply(history, callerPhone, callId);
+// Pure logic — no WebSocket, no audio, fully unit-testable
+```
+
+---
+
+### `src/tools/TTSService.js` — `TTSService`
+Fetches μ-law audio from ElevenLabs and streams it frame-by-frame (20ms frames) to Twilio.
+```js
+await ttsService.sendVoice(ws, streamSid, text, history, gate);
+ttsService.cleanupStream(streamSid);  // call on session end
+```
+
+---
+
+### `src/tools/TwilioClient.js` — `TwilioClient`
+Makes outbound calls and generates TwiML for inbound answer.
+```js
+const { sid } = await twilioClient.makeCall('+911234567890');
+const twiml   = twilioClient.buildAnswerTwiML();
+```
+
+---
+
+### `src/websocket/CallSession.js` — `CallSession`
+One instance per active call. Owns Deepgram WS, conversation history, barge-in gate, and processing state.
+
+Key design: `onStart()` → `startDeepgram()` → STT transcript → `#handleUserTurn()` → `OrchestratorAgent` → `TTSService`
+
+---
+
+### `src/websocket/WebSocketServer.js` — `WebSocketServer`
+Handles the HTTP→WS upgrade for `/media-stream`. Creates a `CallSession` per connection and routes events to it.
+
+---
+
+## ⚙️ Environment Variables
+
+Create a `.env` file in the root:
 
 ```env
 # Server
 PORT=3000
+NGROK_URL=https://your-ngrok-url.ngrok.io
+
+# OpenAI
+OPENAI_API_KEY=sk-...
+OPENAI_MODEL=gpt-4o-mini
+
+# Neo4j (Aura or self-hosted)
+NEO4J_URI=neo4j+s://xxxxxxxx.databases.neo4j.io
+NEO4J_USER=neo4j
+NEO4J_PASS=your-password
 
 # Twilio
 TWILIO_ACCOUNT_SID=ACxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
-TWILIO_AUTH_TOKEN=your_twilio_auth_token
+TWILIO_AUTH_TOKEN=your-auth-token
 TWILIO_PHONE_NUMBER=+1xxxxxxxxxx
 
 # Deepgram
-DEEPGRAM_API_KEY=your_deepgram_api_key
+DEEPGRAM_API_KEY=your-deepgram-key
 
 # ElevenLabs
-ELEVENLABS_API_KEY=your_elevenlabs_api_key
-ELEVENLABS_VOICE_ID=your_cloned_voice_id
+ELEVEN_LABS_API_KEY=your-elevenlabs-key
+ELEVEN_LABS_VOICE_ID=pNInz6obpgDQGcFmaJgB
 
-# LLM (OpenAI or Ollama)
-OPENAI_API_KEY=your_openai_api_key
-OPENAI_BASE_URL=https://api.openai.com/v1   # or http://localhost:11434/v1 for Ollama
-LLM_MODEL=gpt-4o-mini                       # or qwen2.5:1.5b for Ollama
+# Zendesk (optional — KB features)
+ZENDESK_SUBDOMAIN=yourcompany
+ZENDESK_EMAIL=agent@yourcompany.com
+ZENDESK_API_TOKEN=your-zendesk-token
+ZENDESK_DEFAULT_SECTION_ID=123456
+ZENDESK_PERMISSION_GROUP_ID=789012
 
-# Neo4j Aura
-NEO4J_URI=neo4j+s://xxxxxxxx.databases.neo4j.io
-NEO4J_USERNAME=neo4j
-NEO4J_PASSWORD=your_neo4j_password
+# Tavily (optional — live web search)
+TAVILY_API_KEY=tvly-...
 
-# Zendesk
-ZENDESK_SUBDOMAIN=your_subdomain
-ZENDESK_EMAIL=your_email@example.com
-ZENDESK_API_TOKEN=your_zendesk_api_token
-
-# Public base URL (for Twilio webhooks)
-BASE_URL=https://your-server.com
+# Debug (optional)
+DEBUG=true
 ```
 
 ---
 
-## Installation
+## 🚀 Setup & Run
 
 ```bash
-# Clone the repository
-git clone https://github.com/himasnhu77/multi-calling-agent-with-knowledge-base-orchestrator-agent.git
-cd multi-calling-agent-with-knowledge-base-orchestrator-agent
-
-# Install dependencies
+# 1. Install dependencies
 npm install
 
-# Set up environment
+# 2. Copy env file
 cp .env.example .env
-# Edit .env with your credentials
+# Fill in your keys
+
+# 3. Start ngrok (in a separate terminal)
+ngrok http 3000
+
+# 4. Update NGROK_URL in .env with the https URL ngrok gives you
+
+# 5. Start the server
+node server.js
 ```
 
 ---
 
-## Running the Server
+## 🌐 API Endpoints
 
-### Development
-
-```bash
-npm run dev       # nodemon with hot reload
-```
-
-### Production
-
-```bash
-npm start         # node server.js
-```
-
-### With PM2 (recommended for EC2)
-
-```bash
-pm2 start server.js --name "calling-agent"
-pm2 save
-pm2 startup
-```
-
-Once running, configure your Twilio phone number's **Voice webhook** to:
-
-```
-POST https://your-server.com/incoming-call
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| `POST` | `/api/call` | Initiate an outbound call `{ phoneNumber }` |
+| `ALL` | `/api/twilio-answer` | TwiML response for inbound Twilio calls |
+| `POST` | `/api/twilio-status` | Twilio call status webhook |
+| `POST` | `/api/upload-pdf` | Upload a PDF to Zendesk KB |
+| `GET` | `/api/kb-documents` | List all KB documents in Neo4j |
+| `GET` | `/api/graph` | Full caller → memory → entity graph |
+| `GET` | `/api/search?q=query` | Test live web search |
+| `GET` | `/api/memory/:phone` | Get caller memories, entities, KB docs |
+| `DELETE` | `/api/memory/:phone` | Clear all memories for a caller |
 
 ---
 
-## API Reference
+## 🔑 Key Design Decisions
 
-### Telephony Webhooks
-
-| Method | Path | Description |
-|---|---|---|
-| `POST` | `/incoming-call` | Twilio webhook — returns TwiML to connect Media Stream |
-| `WebSocket` | `/media-stream` | Bidirectional audio stream with Twilio |
-
-### Outbound Calls
-
-| Method | Path | Body | Description |
-|---|---|---|---|
-| `POST` | `/make-call` | `{ "to": "+1xxxxxxxxxx" }` | Initiate an outbound AI call |
-
-### Knowledge Base
-
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/kb/search?q=<query>` | Search Zendesk KB articles |
-
-### Document Upload
-
-| Method | Path | Body | Description |
-|---|---|---|---|
-| `POST` | `/upload-pdf` | `multipart/form-data` (field: `pdf`) | Upload and index a PDF document |
-| `GET` | `/documents` | — | List all uploaded documents |
-
-### Web UI
-
-| Path | Description |
-|---|---|
-| `/` | Main dashboard (served from `public/`) |
+| Decision | Reason |
+|----------|--------|
+| Private fields (`#field`) | True encapsulation, not just convention |
+| Singletons (`module.exports = new Foo()`) | One shared instance, no global state |
+| `CallSession` owns all per-call state | Clean lifecycle, easy to test and debug |
+| `OrchestratorAgent` is pure logic | No I/O, no WebSocket — fully unit-testable |
+| `setImmediate()` for Neo4j writes | Never blocks the voice response path |
+| `Logger` wraps `console` | Swap to `winston`/`pino` by editing one file |
+| Parallel fan-out in `OrchestratorAgent` | Memory + KB + Search run simultaneously |
 
 ---
 
-## Call Flow
+## 📦 Dependencies
 
-```
-1. Inbound call hits POST /incoming-call
-   └─► Server responds with TwiML <Connect><Stream url="wss://…/media-stream"/>
-
-2. Twilio opens WebSocket to /media-stream
-   └─► Server establishes Deepgram streaming STT connection
-
-3. Caller speaks → µlaw audio chunks arrive over WebSocket
-   └─► Forwarded to Deepgram in real time
-
-4. Deepgram returns transcript (interim + final)
-   └─► Final transcript triggers Orchestrator Agent
-
-5. Orchestrator Agent:
-   a. Queries Neo4j for caller memory (by caller phone number)
-   b. Searches Zendesk KB for relevant articles
-   c. Builds prompt: [system] + [memory] + [kb_context] + [conversation_history] + [user_turn]
-   d. Calls LLM → gets response text
-
-6. Response text sent to ElevenLabs TTS API
-   └─► Audio streamed back as µlaw_8000 chunks to Twilio
-
-7. Twilio plays audio to caller
-
-8. Post-call: key entities and facts extracted and written to Neo4j graph
-```
-
----
-
-## Knowledge Base Integration
-
-The system queries the Zendesk Help Center Search API:
-
-```
-GET https://{subdomain}.zendesk.com/api/v2/help_center/articles/search.json?query={q}
-```
-
-Top results are truncated and injected into the LLM system prompt as grounded context. This prevents hallucination on product-specific facts and keeps responses accurate.
-
-**Known issues & mitigations:**
-- **403 errors** — ensure your Zendesk API token has `Help Center` read permissions and that the subdomain is correct.
-- **Rate limits** — responses are cached per session to avoid repeated identical queries.
-
----
-
-## Graph Memory (Neo4j)
-
-The memory schema uses three node types:
-
-```
-(:Caller {phone, name?, firstSeen, lastSeen})
-    │
-    ├─[:HAS_MEMORY]──►(:Memory {content, timestamp, callSid})
-    │
-    └─[:MENTIONED]───►(:Entity {type, value})
-                       e.g. {type: "topic", value: "pricing"}
-                            {type: "name", value: "Amit"}
-```
-
-At the **start of each call**, the system runs a Cypher query to fetch recent memories for the caller's phone number and prepends them as context.
-
-At the **end of each call**, extracted entities and a summary of the conversation are written back to the graph.
-
-This enables the agent to say things like:
-> *"Welcome back! Last time we spoke, you were asking about the Enterprise plan. Are you still interested?"*
-
----
-
-## Deployment (AWS EC2)
-
-Tested on **t3.medium** (Ubuntu 22.04):
-
-```bash
-# 1. Install Node.js 18
-curl -fsSL https://deb.nodesource.com/setup_18.x | sudo -E bash -
-sudo apt-get install -y nodejs
-
-# 2. Clone & install
-git clone https://github.com/himasnhu77/multi-calling-agent-with-knowledge-base-orchestrator-agent.git
-cd multi-calling-agent-with-knowledge-base-orchestrator-agent
-npm install
-
-# 3. Configure environment
-nano .env
-
-# 4. Install PM2 and start
-npm install -g pm2
-pm2 start server.js --name "calling-agent"
-pm2 startup && pm2 save
-
-# 5. Nginx reverse proxy (WebSocket support required)
-sudo apt install nginx
-```
-
-**Nginx config** (`/etc/nginx/sites-available/calling-agent`):
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        proxy_pass http://localhost:3000;
-        proxy_http_version 1.1;
-        proxy_set_header Upgrade $http_upgrade;
-        proxy_set_header Connection "upgrade";
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-    }
+```json
+{
+  "openai": "^4.x",
+  "neo4j-driver": "^5.x",
+  "twilio": "^4.x",
+  "ws": "^8.x",
+  "axios": "^1.x",
+  "express": "^4.x",
+  "multer": "^1.x",
+  "pdf-parse": "^1.x",
+  "dotenv": "^16.x"
 }
 ```
-
-> ⚠️ For production, add SSL via `certbot --nginx` and update `BASE_URL` to use `https://`.
-
----
-
-## Project Structure
-
-```
-multi-calling-agent-with-knowledge-base-orchestrator-agent/
-├── server.js              # Main entry point — Express + WebSocket server
-│                          # Twilio webhook handlers
-│                          # Deepgram STT integration
-│                          # ElevenLabs TTS integration
-│                          # Orchestrator Agent logic
-│                          # Neo4j memory read/write
-│                          # Zendesk KB search
-│                          # PDF upload & parsing
-│
-├── public/                # Static web UI
-│   └── index.html         # Dashboard — upload PDFs, view call logs
-│
-├── package.json           # Dependencies & scripts
-├── .gitignore
-└── .env                   # (not committed) credentials
-```
-
----
-
-## Troubleshooting
-
-| Issue | Likely Cause | Fix |
-|---|---|---|
-| Deepgram WebSocket closes with `1005` | No audio data sent before timeout | Ensure Twilio Media Stream connects before Deepgram keepalive window expires; send a silent frame if needed |
-| Zendesk returns `403` | Invalid API token or missing KB permissions | Re-check token scope in Zendesk Admin → API |
-| Neo4j `ServiceUnavailable` | Aura instance paused (free tier auto-pauses) | Wake it in the Neo4j Aura console or switch to a paid instance |
-| TTS audio choppy / silent | ElevenLabs streaming not flushed correctly | Confirm `output_format=ulaw_8000` and that audio chunks are base64-encoded before sending to Twilio |
-| ngrok tunnel resets webhook URL | ngrok free tier assigns a new URL on restart | Use a paid ngrok plan with a fixed domain, or deploy to EC2 with a static IP |
-
----
-
-## License
-
-MIT License — see [LICENSE](LICENSE) for details.
-
----
-
-## Author
-
-**Himanshu** — [@himasnhu77](https://github.com/himasnhu77)
-
-> Built as part of a multi-product AI ecosystem including a CRM Copilot Chrome Extension, AI Email Client, and Animano anime generation platform.
